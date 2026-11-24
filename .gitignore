@@ -1,0 +1,6 @@
+.env
+.venv/
+__pycache__/
+llm_cache/
+data/
+llm_log.jsonl

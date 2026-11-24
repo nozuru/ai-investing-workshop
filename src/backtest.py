@@ -39,8 +39,15 @@ TICKERS = list(STOCKS)
 
 def indicators(px: pd.DataFrame) -> dict[str, pd.DataFrame]:
     c, v = px["Close"][TICKERS], px["Volume"][TICKERS]
-    ma = c.rolling(20).mean()
-    sd = c.rolling(20).std(ddof=0)
+
+    # 価格表には米国だけが開いている日の行もあり、日本株はその行が空になる。
+    # 空の行を含めて20日を数えると移動平均が欠けるため、銘柄ごとに自分の取引日だけで計算する
+    def own_days(df, f):
+        return pd.concat({t: f(df[t].dropna()) for t in df.columns}, axis=1, sort=True).reindex(df.index)
+
+    ma = own_days(c, lambda s: s.rolling(20).mean())
+    sd = own_days(c, lambda s: s.rolling(20).std(ddof=0))
+    vol20_prev = own_days(v, lambda s: s.shift(1).rolling(20).mean())
     return {
         "close": c,
         "open": px["Open"][TICKERS],
@@ -48,7 +55,7 @@ def indicators(px: pd.DataFrame) -> dict[str, pd.DataFrame]:
         "ma20": ma,
         "lower": ma - 2 * sd,
         "ath": c.cummax(),  # その日までの最高値（上場来。yfinance で取れる最古の日から）
-        "vol20_prev": v.shift(1).rolling(20).mean(),  # 前日までの20日平均出来高
+        "vol20_prev": vol20_prev,  # 前日までの20日平均出来高
     }
 
 
@@ -77,19 +84,28 @@ def regimes(px: pd.DataFrame, days: list[pd.Timestamp], mode: str) -> dict:
         sys.exit("LLMのキーが .env にありません（WORKSHOP_LLM_API_KEY）。.env.example を参照。")
     close_all = px["Close"]
     prompts = {d: llm_regime.build_prompt(close_all, d) for d in days}
-    out, done = {}, 0
+    out, done, failed = {}, 0, []
 
     def work(d):
-        return d, llm_regime.ask(prompts[d])
+        try:
+            return d, llm_regime.ask(prompts[d])
+        except Exception as e:  # 1件の失敗で全体を止めない。再実行すれば、その日だけ問い直す
+            return d, e
 
     # 判断は互いに独立なので、古い日付から順に投げて並行で処理する（DGX Spark の同時実行上限は1人4件、全体4件）
     with ThreadPoolExecutor(max_workers=3) as ex:
         for d, text in ex.map(work, days):
+            done += 1
+            if isinstance(text, Exception):
+                failed.append(d)
+                print(f"\n{d.date()} のLLM呼び出しに失敗: {type(text).__name__}: {str(text)[:200]}")
+                continue
             label, reason = llm_regime.parse(text)
             out[d] = (label, reason, prompts[d])
-            done += 1
             print(f"\rLLM判断 {done}/{len(days)}  {d.date()} {label}      ", end="", flush=True)
     print()
+    if failed:
+        sys.exit(f"{len(failed)}日分のLLM判断が取れなかった。もう一度実行すると、その日だけ問い直す。")
     return out
 
 

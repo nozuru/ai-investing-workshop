@@ -76,7 +76,8 @@ def ask(prompt: str) -> str:
         api_base=os.environ.get("WORKSHOP_LLM_BASE_URL", DEFAULT_BASE_URL),
         api_key=os.environ["WORKSHOP_LLM_API_KEY"],
         messages=[{"role": "user", "content": prompt}],
-        timeout=120,
+        timeout=900,  # 推論に時間がかかり、同時に投げると1件あたり数分かかることがある
+        num_retries=3,
     )
     return response.choices[0].message.content
 

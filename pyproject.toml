@@ -1,0 +1,12 @@
+[project]
+name = "ai-investing-workshop"
+version = "0.1.0"
+requires-python = ">=3.14"
+dependencies = [
+    "diskcache>=5.6.3",
+    "litellm>=1.109.1",
+    "matplotlib>=3.11.2",
+    "pandas>=3.1.1",
+    "python-dotenv>=1.2.4",
+    "yfinance>=1.8.0",
+]

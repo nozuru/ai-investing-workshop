@@ -3,9 +3,10 @@
 戦略の判断にLLMやニュースを使いたいチーム向けの資料です。使わなくても構いません。
 必要なキーだけを当日配ります。キーはコードに直接書かず、`.env.example` を `.env` という名前でコピーして書き込んでください。`.env` はGitの管理対象に含めません。
 
-## ローカルLLM
+## LLM
 
-会場のローカルLLMは、OpenAI互換のAPIとして `litellm` から呼び出せます。接続先とモデル名は下記のコードに書いてあるので、用意するのはキーだけです。
+会場のローカルLLMを使います。会場のLLMが止まったときや混み合ったときの予備として、DeepSeekのAPIも用意しています。
+どちらも `litellm` から同じ書き方で呼び出せます。接続先とモデル名は下記のコードに書いてあるので、用意するのはキーだけです。
 必要なパッケージは `uv add litellm diskcache python-dotenv` で入ります（litellm 1.109.1、diskcache 5.6.3でキャッシュの動作を確認済み）。
 
 ```python
@@ -17,19 +18,34 @@ from dotenv import load_dotenv
 
 load_dotenv()  # .env に書いたキーを読み込む
 
-LLM_BASE_URL = "https://dgx.yozorafinance.com/v1"
-LLM_MODEL = "dgx-default"
+# 会場のLLMが使えないときは "deepseek" に変える
+LLM = "local"
+
+LLM_SETTINGS = {
+    "local": {  # 会場のローカルLLM
+        "model": "openai/dgx-default",
+        "api_base": "https://dgx.yozorafinance.com/v1",
+        "api_key_env": "WORKSHOP_LLM_API_KEY",
+    },
+    "deepseek": {  # 予備のDeepSeek
+        "model": "deepseek/deepseek-flash",
+        "api_base": "https://api.deepseek.com",
+        "api_key_env": "DEEPSEEK_API_KEY",
+    },
+}
 
 # 同じ質問への応答をフォルダに保存する。2回目以降の実行ではLLMを呼ばない。
-cache = diskcache.Cache("llm_cache")
+# LLMごとに保存先を分け、別のLLMの応答が混ざらないようにする。
+cache = diskcache.Cache(f"llm_cache/{LLM}")
 
 
 @cache.memoize()
 def ask(prompt: str) -> str:
+    settings = LLM_SETTINGS[LLM]
     response = litellm.completion(
-        model=f"openai/{LLM_MODEL}",
-        api_base=LLM_BASE_URL,
-        api_key=os.environ["WORKSHOP_LLM_API_KEY"],
+        model=settings["model"],
+        api_base=settings["api_base"],
+        api_key=os.environ[settings["api_key_env"]],
         messages=[{"role": "user", "content": prompt}],
         timeout=120,
     )
@@ -43,6 +59,7 @@ def ask(prompt: str) -> str:
 呼び出す頻度や回数に決まりはありません。戦略に必要な使い方を、そのまま実装してください。
 
 会場のLLMは全チームで共有しており、同時接続数は最大10、1接続あたりの生成速度は毎秒30トークンほどです。
+予備のDeepSeekは同時接続数の上限が十分に大きく、会場のLLMより速く回せます。
 呼び出し回数が多い戦略では、時間内に全期間を回し切れないことがあります。途中で止まっても、そこまでの経過を見せられるように実装してください。
 
 - **古い日付から順に進める**: 判断日を古い順に処理し、現在どの日付まで進んだかを画面に表示します。
@@ -55,6 +72,7 @@ def ask(prompt: str) -> str:
 LLMを使う戦略には特有の落とし穴があります。
 モデルは学習した時点までの相場を知っているので、その期間のバックテストは実力以上に成績が良く出てしまいます。
 最終実行の期間がモデルの学習時期より後であれば、そこで本当の差が見えます。
+DeepSeekは2026年秋に更新された新しいモデルなので、最終実行の期間（2026年7月以降）の相場も一部知っている可能性があります。DeepSeekで出した最終実行の結果は、割り引いて見てください。
 
 ## ニュース（モモンガサーチ）
 

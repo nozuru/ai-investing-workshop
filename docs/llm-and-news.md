@@ -1,18 +1,24 @@
 # LLMやニュースを戦略に使う
 
 戦略の判断にLLMやニュースを使いたいチーム向けの資料です。使わなくても構いません。
-接続先とキーは当日配ります。キーをコードに直接書かず、`.env` ファイルに記載してください。`.env` はGitの管理対象に含めません。
+必要なキーだけを当日配ります。キーはコードに直接書かず、`.env.example` を `.env` という名前でコピーして書き込んでください。`.env` はGitの管理対象に含めません。
 
 ## ローカルLLM
 
-会場のローカルLLMは、OpenAI互換のAPIとして `litellm` から呼び出せます。
-必要なパッケージは `uv add litellm diskcache` で入ります（litellm 1.109.1、diskcache 5.6.3でキャッシュの動作を確認済み）。
+会場のローカルLLMは、OpenAI互換のAPIとして `litellm` から呼び出せます。接続先とモデル名は下記のコードに書いてあるので、用意するのはキーだけです。
+必要なパッケージは `uv add litellm diskcache python-dotenv` で入ります（litellm 1.109.1、diskcache 5.6.3でキャッシュの動作を確認済み）。
 
 ```python
 import os
 
 import diskcache
 import litellm
+from dotenv import load_dotenv
+
+load_dotenv()  # .env に書いたキーを読み込む
+
+LLM_BASE_URL = "https://dgx.yozorafinance.com/v1"
+LLM_MODEL = "dgx-default"
 
 # 同じ質問への応答をフォルダに保存する。2回目以降の実行ではLLMを呼ばない。
 cache = diskcache.Cache("llm_cache")
@@ -21,8 +27,8 @@ cache = diskcache.Cache("llm_cache")
 @cache.memoize()
 def ask(prompt: str) -> str:
     response = litellm.completion(
-        model=f"openai/{os.environ['WORKSHOP_LLM_MODEL']}",
-        api_base=os.environ["WORKSHOP_LLM_BASE_URL"],
+        model=f"openai/{LLM_MODEL}",
+        api_base=LLM_BASE_URL,
         api_key=os.environ["WORKSHOP_LLM_API_KEY"],
         messages=[{"role": "user", "content": prompt}],
         timeout=120,
